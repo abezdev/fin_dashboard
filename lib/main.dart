@@ -42,7 +42,7 @@ class _DashboardPageState extends State<DashboardPage> {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text(
-          'Demo bank connected. Add your Plaid Link token to go live.',
+          'Demo bank connected. Add your Plaid Link token to go live s.',
         ),
         behavior: SnackBarBehavior.floating,
       ),
