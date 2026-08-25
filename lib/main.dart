@@ -1,6 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'plaid_service.dart';
 
-void main() {
+Future<void> main() async {
+
+  await dotenv.load(fileName: ".env");
+
   runApp(const FinDashboardApp());
 }
 
@@ -36,17 +41,41 @@ class DashboardPage extends StatefulWidget {
 class _DashboardPageState extends State<DashboardPage> {
   int _selectedIndex = 0;
   bool _isConnected = false;
-
-  void _connectBank() {
-    setState(() => _isConnected = true);
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text(
-          'Demo bank connected. Add your Plaid Link token to go live s.',
-        ),
-        behavior: SnackBarBehavior.floating,
-      ),
+  bool _isConnecting = false;
+  final PlaidService _plaidService = PlaidService(
+    baseUrl: dotenv.env['PLAID_API_BASE_URL'], 
+    // clientId: dotenv.env['Client_ID_plaid'], 
+    // secret: dotenv.env['Secret_plaid']  
     );
+
+  Future<void> _connectBank() async {
+    if (_isConnecting) return;
+    setState(() => _isConnecting = true);
+
+    try {
+      final linkToken = await _plaidService.createLinkToken(userId: 'user-id');
+      if (!mounted) return;
+      setState(() => _isConnected = true);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Link token created (${linkToken.substring(0, 12)}...). Open Plaid Link here.',
+          ),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } on Object catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not connect bank: $error'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      print('Error creating link token: $error');
+    } finally {
+      if (mounted) setState(() => _isConnecting = false);
+    }
   }
 
   @override
@@ -68,6 +97,7 @@ class _DashboardPageState extends State<DashboardPage> {
                     child: _TopBar(
                       isConnected: _isConnected,
                       onConnect: _connectBank,
+                      isConnecting: _isConnecting,
                       isWide: isWide,
                     ),
                   ),
@@ -82,6 +112,7 @@ class _DashboardPageState extends State<DashboardPage> {
                       child: _DashboardContent(
                         isConnected: _isConnected,
                         onConnect: _connectBank,
+                        isConnecting: _isConnecting,
                       ),
                     ),
                   ),
@@ -224,10 +255,12 @@ class _TopBar extends StatelessWidget {
   const _TopBar({
     required this.isConnected,
     required this.onConnect,
+    required this.isConnecting,
     required this.isWide,
   });
   final bool isConnected;
   final VoidCallback onConnect;
+  final bool isConnecting;
   final bool isWide;
 
   @override
@@ -240,12 +273,12 @@ class _TopBar extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Tuesday, August 25 _TopBar',
+                'Tuesday, August 25',
                 style: TextStyle(color: Color(0xff75827d), fontSize: 13),
               ),
               SizedBox(height: 5),
               Text(
-                'Good morning, Alex _TopBar',
+                'Good morning, Alex',
                 style: TextStyle(
                   color: Color(0xff173c37),
                   fontSize: 27,
@@ -275,9 +308,20 @@ class _TopBar extends StatelessWidget {
         if (isWide) ...[
           const SizedBox(width: 18),
           FilledButton.icon(
-            onPressed: onConnect,
-            icon: Icon(isConnected ? Icons.check_rounded : Icons.add_rounded),
-            label: Text(isConnected ? 'Bank connected  ss' : 'Connect a bank  ss'),
+            onPressed: isConnecting ? null : onConnect,
+            icon: isConnecting
+                ? const SizedBox.square(
+                    dimension: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : Icon(isConnected ? Icons.check_rounded : Icons.add_rounded),
+            label: Text(
+              isConnecting
+                  ? 'Connecting...'
+                  : isConnected
+                  ? 'Bank connected'
+                  : 'Connect a bank',
+            ),
           ),
         ],
       ],
@@ -286,9 +330,14 @@ class _TopBar extends StatelessWidget {
 }
 
 class _DashboardContent extends StatelessWidget {
-  const _DashboardContent({required this.isConnected, required this.onConnect});
+  const _DashboardContent({
+    required this.isConnected,
+    required this.onConnect,
+    required this.isConnecting,
+  });
   final bool isConnected;
   final VoidCallback onConnect;
+  final bool isConnecting;
 
   @override
   Widget build(BuildContext context) {
@@ -300,9 +349,20 @@ class _DashboardContent extends StatelessWidget {
           Align(
             alignment: Alignment.centerRight,
             child: FilledButton.icon(
-              onPressed: onConnect,
-              icon: Icon(isConnected ? Icons.check_rounded : Icons.add_rounded),
-              label: Text(isConnected ? 'Bank connected  aa' : 'Connect a bank  aa'),
+              onPressed: isConnecting ? null : onConnect,
+              icon: isConnecting
+                  ? const SizedBox.square(
+                      dimension: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : Icon(isConnected ? Icons.check_rounded : Icons.add_rounded),
+              label: Text(
+                isConnecting
+                    ? 'Connecting...'
+                    : isConnected
+                    ? 'Bank connected'
+                    : 'Connect a bank',
+              ),
             ),
           ),
         if (!isWide) const SizedBox(height: 20),
@@ -385,7 +445,7 @@ class _BalanceCard extends StatelessWidget {
         Row(
           children: [
             const Text(
-              'TOTAL BALANCE _BalanceCard',
+              'TOTAL BALANCE',
               style: TextStyle(
                 color: Color(0xffa9d1c3),
                 fontSize: 11,
@@ -462,7 +522,7 @@ class _StatCard extends StatelessWidget {
         ),
         const Spacer(),
         Text(
-          label + "_StatCard",
+          label,
           style: const TextStyle(color: Color(0xff75827d), fontSize: 12),
         ),
         const SizedBox(height: 4),
@@ -491,8 +551,8 @@ class _StatCard extends StatelessWidget {
 class _UpcomingCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) => _Panel(
-    title: 'Upcoming bills  _UpcomingCard',
-    action: 'See all _UpcomingCard',
+    title: 'Upcoming bills',
+    action: 'See all',
     child: Column(
       children: const [
         _BillRow(
@@ -553,7 +613,7 @@ class _BillRow extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                name + " _BillRow",
+                name,
                 style: const TextStyle(
                   color: Color(0xff173c37),
                   fontWeight: FontWeight.w700,
@@ -582,7 +642,7 @@ class _BillRow extends StatelessWidget {
 class _PaydayCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) => _Panel(
-    title: 'Next payday _PaydayCard',
+    title: 'Next payday',
     action: 'Calendar',
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -656,7 +716,7 @@ class _Panel extends StatelessWidget {
         Row(
           children: [
             Text(
-              title + 'panel',
+              title,
               style: const TextStyle(
                 color: Color(0xff173c37),
                 fontSize: 16,
