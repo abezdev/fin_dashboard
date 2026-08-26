@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'plaid_service.dart';
+
+import 'package:plaid_flutter/plaid_flutter.dart';
+// Import your service that generates the link token
+import 'plaid_service.dart'; 
+
 
 Future<void> main() async {
 
@@ -44,37 +48,72 @@ class _DashboardPageState extends State<DashboardPage> {
   bool _isConnecting = false;
   final PlaidService _plaidService = PlaidService(
     baseUrl: dotenv.env['PLAID_API_BASE_URL'], 
-    // clientId: dotenv.env['Client_ID_plaid'], 
-    // secret: dotenv.env['Secret_plaid']  
     );
 
-  Future<void> _connectBank() async {
-    if (_isConnecting) return;
-    setState(() => _isConnecting = true);
+  Future<void> _openPlaidLink() async {
+    setState(() => _isConnected = true);
 
     try {
-      final linkToken = await _plaidService.createLinkToken(userId: 'user-id');
-      if (!mounted) return;
-      setState(() => _isConnected = true);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Link token created (${linkToken.substring(0, 12)}...). Open Plaid Link here.',
-          ),
-          behavior: SnackBarBehavior.floating,
-        ),
+      // 1. Fetch your clean token payload
+      print("start1");
+      final String rawResponse = await _plaidService.createLinkToken(userId: 'user_good1');
+      final String linkToken = rawResponse; 
+      print("start2");
+
+      // 2. Instantiate configuration 
+      final LinkTokenConfiguration configuration = LinkTokenConfiguration(
+        token: linkToken,
       );
-    } on Object catch (error) {
+      print("start3");
+
+      // 3. Bind callback event listeners before opening the SDK channel
+      PlaidLink.onSuccess.listen((LinkSuccess success) {
+        _handleSuccess(success.publicToken, success.metadata);
+      });
+
+      PlaidLink.onExit.listen((LinkExit exit) {
+        _handleExit(exit.error, exit.metadata);
+      });
+      print("start4");
+
+      // 4. Create the native session context asynchronously
+      await PlaidLink.create(configuration: configuration);
+
+      // 5. Open the native interface (Notice there are no named parameters here!)
+      PlaidLink.open();
+
+    } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Could not connect bank: $error'),
-          behavior: SnackBarBehavior.floating,
-        ),
+        SnackBar(content: Text('Failed to initialize Plaid: $e')),
       );
-      print('Error creating link token: $error');
     } finally {
-      if (mounted) setState(() => _isConnecting = false);
+      if (mounted) setState(() => _isConnected = false);
+    }
+  }
+    // Replaces your web: $.post('/exchange_public_token', ...)
+  void _handleSuccess(String publicToken, LinkSuccessMetadata metadata) async {
+    print("Success! Public Token: $publicToken");
+
+    try {
+      await _plaidService.exchangePublicToken(
+        userId: 'user_good1',
+        publicToken: publicToken,
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not save bank connection: $error')),
+      );
+    }
+  }
+
+  // Replaces: onExit: function(err, metadata)
+  void _handleExit(LinkError? error, LinkExitMetadata metadata) {
+    if (error != null) {
+      print("Plaid Exit Error: ${error.message} (${error.code})");
+    } else {
+      print("User exited Plaid link intentionally.");
     }
   }
 
@@ -96,7 +135,7 @@ class _DashboardPageState extends State<DashboardPage> {
                   SliverToBoxAdapter(
                     child: _TopBar(
                       isConnected: _isConnected,
-                      onConnect: _connectBank,
+                      onConnect: _openPlaidLink,//_connectBank,
                       isConnecting: _isConnecting,
                       isWide: isWide,
                     ),
@@ -111,7 +150,7 @@ class _DashboardPageState extends State<DashboardPage> {
                     sliver: SliverToBoxAdapter(
                       child: _DashboardContent(
                         isConnected: _isConnected,
-                        onConnect: _connectBank,
+                        onConnect: _openPlaidLink,//_connectBank,
                         isConnecting: _isConnecting,
                       ),
                     ),
@@ -230,6 +269,8 @@ class _NavItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.only(bottom: 8),
+    child: Material(
+    type: MaterialType.transparency,
     child: ListTile(
       onTap: onTap,
       selected: active,
@@ -247,7 +288,9 @@ class _NavItem extends StatelessWidget {
           fontWeight: active ? FontWeight.w700 : FontWeight.w500,
         ),
       ),
+    )
     ),
+    
   );
 }
 
@@ -739,4 +782,149 @@ class _Panel extends StatelessWidget {
       ],
     ),
   );
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+class PlaidLinkButton extends StatefulWidget {
+  final String userId;
+
+  const PlaidLinkButton({super.key, required this.userId});
+
+  @override
+  State<PlaidLinkButton> createState() => _PlaidLinkButtonState();
+}
+
+class _PlaidLinkButtonState extends State<PlaidLinkButton> {
+  final PlaidService _plaidService = PlaidService();
+  bool _isLoading = false;
+
+  // This replaces your JavaScript 'Plaid.create' flow
+  // Future<void> _openPlaidLink() async {
+  //   setState(() => _isLoading = true);
+
+  //   try {
+  //     // 1. Replaces: await $.post('/create_link_token')
+  //     final String rawResponse = await _plaidService.createLinkToken(userId: widget.userId);
+      
+  //     // TODO: Parse the token out of your API response string
+  //     // For this example, assuming your response string is or contains the token:
+  //     final String linkToken = rawResponse; 
+
+  //     // 2. Initialize Plaid Link Configuration
+  //     final LinkTokenConfiguration configuration = LinkTokenConfiguration(
+  //       token: linkToken,
+  //     );
+
+  //     // 3. Replaces: handler.open();
+  //     await PlaidLink.create(configuration: configuration);
+  //     PlaidLink.open();
+
+  //     // 4. Handle callbacks (Replaces onSuccess, onExit, onEvent)
+  //     PlaidLink.onSuccess.listen((LinkSuccess success) {
+  //       _handleSuccess(success.publicToken, success.metadata);
+  //     });
+
+  //     PlaidLink.onExit.listen((LinkExit exit) {
+  //       _handleExit(exit.error, exit.metadata);
+  //     });
+
+  //     PlaidLink.onEvent.listen((LinkEvent event) {
+  //       // Replaces: onEvent: function(eventName, metadata)
+  //       print("Plaid Event: ${event.name}, Metadata: ${event.metadata}");
+  //     });
+
+  //   } catch (e) {
+  //     ScaffoldMessenger.of(context).showSnackBar(
+  //       SnackBar(content: Text('Failed to initialize Plaid: $e')),
+  //     );
+  //   } finally {
+  //     setState(() => _isLoading = false);
+  //   }
+  // }
+  Future<void> _openPlaidLink() async {
+  setState(() => _isLoading = true);
+
+  try {
+    // 1. Fetch your clean token payload
+    final String rawResponse = await _plaidService.createLinkToken(userId: widget.userId);
+    final String linkToken = rawResponse; 
+
+    // 2. Instantiate configuration 
+    final LinkTokenConfiguration configuration = LinkTokenConfiguration(
+      token: linkToken,
+    );
+
+    // 3. Bind callback event listeners before opening the SDK channel
+    PlaidLink.onSuccess.listen((LinkSuccess success) {
+      _handleSuccess(success.publicToken, success.metadata);
+    });
+
+    PlaidLink.onExit.listen((LinkExit exit) {
+      _handleExit(exit.error, exit.metadata);
+    });
+
+    // 4. Create the native session context asynchronously
+    await PlaidLink.create(configuration: configuration);
+
+    // 5. Open the native interface (Notice there are no named parameters here!)
+    PlaidLink.open();
+
+  } catch (e) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Failed to initialize Plaid: $e')),
+    );
+  } finally {
+    setState(() => _isLoading = false);
+  }
+}
+  // Replaces your web: $.post('/exchange_public_token', ...)
+  void _handleSuccess(String publicToken, LinkSuccessMetadata metadata) async {
+    print("Success! Public Token: $publicToken");
+    
+    // TODO: Send the publicToken to your backend server to exchange for an access_token
+    // await _plaidService.exchangePublicToken(publicToken);
+  }
+
+  // Replaces: onExit: function(err, metadata)
+  void _handleExit(LinkError? error, LinkExitMetadata metadata) {
+    if (error != null) {
+      print("Plaid Exit Error: ${error.message} (${error.code})");
+    } else {
+      print("User exited Plaid link intentionally.");
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Replaces: <button id="link-button">Link Account</button>
+    return ElevatedButton(
+      onPressed: _isLoading ? null : _openPlaidLink,
+      style: ElevatedButton.styleFrom(
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+      ),
+      child: _isLoading
+          ? const SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : const Text("Link Account"),
+    );
+  }
 }
